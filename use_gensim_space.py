@@ -1,4 +1,3 @@
-import build_gensim_space
 from gensim.models.doc2vec import Doc2Vec
 from gensim.models.doc2vec import LabeledSentence
 from sklearn.neighbors import NearestNeighbors

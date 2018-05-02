@@ -1,0 +1,67 @@
+import os
+from nltk.tokenize import sent_tokenize
+from nltk import word_tokenize
+OUTPUT_DIR = "data_output"
+
+mind_dict = {}
+result_dict = {"A-SAN" : [], "B-SAN": [], "AUDIENCE" : []}
+mappings = {0 : "A-SAN", 1 : "B-SAN"}
+# Each movie should be assigned to one of the three minds
+def which_mind(movie_id):
+    if movie_id not in mind_dict:
+        mind_dict[movie_id] = len(mind_dict.keys())%2
+    return mind_dict[movie_id]
+
+def read_converstion():
+    line_dict = {}
+    all_lines = open("cornell_movie-dialogs_corpus/movie_lines.txt", encoding="ascii", errors="replace")
+    for line in all_lines:
+        sp = line.strip().split("+++$+++")
+        line_dict[sp[0].strip()] = sp[4]
+
+    conv = open("cornell_movie-dialogs_corpus/movie_conversations.txt", encoding="ascii",  errors="replace")
+    more_than_ten = 0
+    for line in conv:
+        sp = line.strip().split("+++$+++")
+        lines = ([el.strip() for el in sp[3].replace("['","").replace("']", "").split("', '")])
+        
+        conversation_list = [line_dict[el].strip() for el in lines]
+        if to_include(conversation_list) and len(lines) >= 5:
+            result_dict["AUDIENCE"].append(conversation_list)
+        else: # not audience
+            mind = which_mind(sp[2])
+            more_than_ten = more_than_ten + 1
+            result_dict[mappings[mind]].append(conversation_list)
+
+    print("Total number of dialgos extracted ", more_than_ten)
+    print("Belonging to " + str(len(mind_dict.keys())) + " films")
+    for key, value in result_dict.items():
+        print(key, len(value))
+
+        f = open(os.path.join("data_output", key.lower() + ".txt"), "w")
+        for dialog in value:
+            for line in dialog:
+                f.write(line + "\n")
+            f.write("\n")
+        f.close()
+
+def to_include(lines):
+    for line in lines:
+        if ">" in line or "<" in line:
+            return False
+        if line.strip() == "":
+            return False
+        sentences = sent_tokenize(line)
+        if len(sentences) > 2:
+            return False
+        if len(sentences) > 1 and len(word_tokenize(sentences[0])) > 4:
+            return False
+        last_sentence = sentences[-1]
+        if len(word_tokenize(last_sentence)) > 12 or len(word_tokenize(last_sentence)) < 2:
+            return False
+    return True
+
+if __name__ == '__main__':
+    if not os.path.exists(OUTPUT_DIR):
+        os.makedirs(OUTPUT_DIR)
+    read_converstion()

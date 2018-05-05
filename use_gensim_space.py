@@ -44,18 +44,18 @@ def construct_vectors(lines, file_name_path):
     current_lines_vector = []
     next_dict = {}
 
-    for line, next_line in zip(lines, lines[1:]):
-        if read_movie_lines.to_include([line, next_line]):
+    for prev_line, line, next_line in zip(lines, lines[1:], lines[2:]):
+        if read_movie_lines.to_include([prev_line, line, next_line]):
             sentences = sent_tokenize(line)
             last_sentence_in_line = sentences[-1]
             word_list = word_tokenize(last_sentence_in_line)
-            if len(sent_tokenize(next_line)) == 1:
-                current_lines.append(line)
-                norm_vector = get_vector_for_sentence(line)
-                current_lines_vector.append(np.array(norm_vector))
-                if line not in next_dict:
+            current_lines.append(line)
+            norm_vector = get_vector_for_sentence(line)
+            prev_norm = get_vector_for_sentence(prev_line)
+            current_lines_vector.append(np.array(prev_norm + norm_vector))
+            if line not in next_dict:
                     next_dict[line] = []
-                next_dict[line].append(next_line)
+            next_dict[line].append(next_line)
 
     print(len(current_lines))
     print(len(current_lines_vector))
@@ -103,7 +103,9 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
     nr_of_neighbours = 2
     if len(tokens) < 4 and prev_last_sentence != "":
         nr_of_neighbours = 2
-    vec = get_vector_for_sentence(last_sentence_in_line)
+    current_vec = get_vector_for_sentence(last_sentence_in_line)
+    pre_vec = get_vector_for_sentence(prev_last_sentence)
+    vec = pre_vec + current_vec
     #print("\n************\n Nearest to: " + text + "\n--")
     neighbours = nbrs.kneighbors(np.array([vec]), 10, return_distance=False)[0]
     neighbours_distance = nbrs.kneighbors(np.array([vec]), 10, return_distance=True)[0][0]
@@ -126,8 +128,9 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
         next_line_cleaned = clean(next_line)
         last_sentence_in_next_line = sent_tokenize(next_line_cleaned)[-1]
         next_vec = get_vector_for_sentence(last_sentence_in_next_line)
-        neighbours_next = nbrs.kneighbors(np.array([next_vec]), 10, return_distance=False)[0]
-        neighbours_distance_next = nbrs.kneighbors(np.array([next_vec]), 10, return_distance=True)[0][0]
+        current_and_next = current_vec + next_vec
+        neighbours_next = nbrs.kneighbors(np.array([current_and_next]), 10, return_distance=False)[0]
+        neighbours_distance_next = nbrs.kneighbors(np.array([current_and_next]), 10, return_distance=True)[0][0]
         for index, dist in zip(neighbours_next, neighbours_distance_next):
             if dist < 0.87 and (len(word_tokenize(next_line)) < 5 or dist > 0.0): # Don't use the exact same line, don't copy previos dialog
                 next_line_ret = next_line

@@ -1,6 +1,7 @@
 import os
 from nltk.tokenize import sent_tokenize
 from nltk import word_tokenize
+import use_gensim_space
 OUTPUT_DIR = "data_output"
 
 mind_dict = {}
@@ -49,6 +50,7 @@ def to_include(lines):
     for line in lines:
         if ">" in line or "<" in line:
             return False
+        line = use_gensim_space.clean(line)
         if line.strip() == "":
             return False
         sentences = sent_tokenize(line)
@@ -57,8 +59,16 @@ def to_include(lines):
         if len(sentences) > 1 and len(word_tokenize(sentences[0])) > 4:
             return False
         last_sentence = sentences[-1]
-        if len(word_tokenize(last_sentence)) > 12 or len(word_tokenize(last_sentence)) < 2:
+        last_sentence = last_sentence.replace(".", " ")
+        words = word_tokenize(last_sentence)
+        if len(words) > 14 or len(words) < 2:
             return False
+        if len(words) < 3:
+            # Remove sentences with very little content
+            for word in words:
+                if word != "?" and word != "!" and word != "I" and len(word) < 2\
+                    and not word.lower().startswith("ye") and not word.lower().startswith("no"):
+                    return False
     return True
 
 if __name__ == '__main__':

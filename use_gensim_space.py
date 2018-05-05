@@ -11,9 +11,11 @@ from random import randint
 import gensim
 import read_movie_lines
 from scipy.spatial import distance
+import random
 
 word2vec_model = None
-
+person_vec = ["Maria", "Smith", "James", "John", "Robert", "Michael", "William", "David", "Mary", "Patricia"\
+                  "Linda", "Barbara", "Elizabeth", "Jennifer"]
 semantic_vector_length = 300
 OUTPUT_DIR = "data_output"
 NBRS_MODEL_NAME = os.path.join(OUTPUT_DIR, "nbrs_model")
@@ -85,12 +87,14 @@ def get_saved_model(model_name, lines_f, vectors_f, next_dict_f):
     #distances, indices = nbrs.kneighbors(X)
     return saved_nbrs, saved_current_lines, saved_current_lines_vector, saved_next_dict
 
-def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text, previous_line_to_compare_with):
-    text = clean(text)
+def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncleaned, previous_line_uncleaned):
+    text = clean(text_uncleaned)
+    text_uncleaned = None
     last_sentence_in_line = sent_tokenize(text)[-1]
     tokens = word_tokenize(last_sentence_in_line)
 
-    prev_text = clean(previous_line_to_compare_with)
+    prev_text = clean(previous_line_uncleaned)
+    previous_line_uncleaned = None
     prev_last_sentence_list = sent_tokenize(prev_text)
     prev_last_sentence = ""
     if len(prev_last_sentence_list) > 0:
@@ -180,6 +184,7 @@ def make_dialogs(nrs, file_name_1, file_name_2):
         print("****************")
         selected_dialog = randint(0, len(first_lines)-1)
         first_line = first_lines[selected_dialog]
+        print("first_line: ", first_line)
         rest = rest_lines[first_line]
         print(rest)
         name = "A-san: "
@@ -214,43 +219,115 @@ def get_space():
 
 # The sentence needs to have at least three tokens
 def get_vector_for_sentence(sentence):
+    sentence = clean(sentence)
+    sentence = sentence.replace(".", " ")
     #
     final_vector = [0]
     tokens = word_tokenize(sentence)
-    if tokens[-1] in "?!.,:;":
+    if len(tokens) > 0 and tokens[-1] in "?!.,:;":
         if tokens[-1] == "?":
             final_vector = [1] # a bit to show its ending with question mark
         tokens = tokens[:-1]
     # Take the first three and the last three words of the sentence to represent it. Regardless if they occur double
     if len(tokens) == 0:
-        tokens = ["wernwrelkjdsfio", "wernwrelkjdsfio", "wernwrelkjdsfio"]
+        tokens = ["wernwrelkjdsfio", "wernwrelkjdsfio", "wernwrelkjdsfio", "wernwrelkjdsfio"]
     if len(tokens) == 1:
-        tokens =  list((tokens[0], tokens[0], tokens[0]))
+        tokens =  list((tokens[0], tokens[0], tokens[0], tokens[0]))
     if len(tokens) == 2:
-        tokens =  list((tokens[0], tokens[0], tokens[1]))
-    for token in tokens[:3] + tokens[-3:]:
+        tokens =  list((tokens[0], tokens[0], tokens[1], tokens[1]))
+    if len(tokens) == 3:
+        tokens =  list((tokens[0], tokens[1], tokens[1], tokens[1], tokens[2]))
+    for token_nr, token in enumerate(tokens[:4] + tokens[-4:]):
+        token = token.strip()
+        raw_vec = None
         try:
-            raw_vec = word2vec_model[token.lower()]
+            if token_nr != 0 and token in word2vec_model:
+                raw_vec = word2vec_model[token]
+            elif token.lower() in word2vec_model:
+                raw_vec = word2vec_model[token.lower()]
+            elif token_nr != 0 and token[0].isupper():
+                # Assume that the unknown token it is a name of a person
+                random.shuffle(person_vec)
+                print("Try to replace ", token, " with ",  person_vec[0])
+                raw_vec = word2vec_model[person_vec[0]]
+            elif token.isdigit():
+                raw_vec = word2vec_model["ten"]
+            else:
+                raw_vec = try_match_wider(token, tokens, token_nr, word2vec_model)
+    
         except KeyError:
+            print("No vector found for", token)
             raw_vec = [0] * semantic_vector_length
         list_raw_vec = list(raw_vec)
         final_vector.extend(list_raw_vec)
     length = len(final_vector)
     norm_vector = list(preprocessing.normalize(np.reshape(final_vector, newshape = (1, length)), norm='l2')[0])
-    if len(norm_vector) != 1801:
+    if len(norm_vector) != 2401:
         print("Wrong size of vector")
         print(sentence)
         print(norm_vector)
         exit(1)
     return norm_vector
 
+def try_match_wider(token, all_tokens, token_nr, word2vec_model):
+    token_list = list(token)
+    for i in range(0, len(token)-1):
+        if token_list[i] == token_list[i + 1]:
+            del token_list[i]
+            distance_one = ''.join(token_list)
+            if distance_one in word2vec_model:
+                return word2vec_model[distance_one]
+        token_list = list(token)
+
+    token_list = list(token)
+    frequent_english_letters = ['e', 't', 'a', 'o', 'i', 'n', 's', 'h', 'r', 'd', 'l', 'c', 'u', 'm', 'w', 'f', 'g', 'y', 'p', 'b']
+    for i in range(0, len(token)):
+        for l in frequent_english_letters:
+            token_list[i] = l
+            distance_one = ''.join(token_list)
+            if distance_one in word2vec_model:
+                return word2vec_model[distance_one]
+            token_list = list(token)
+    # assume it's a person regardless of position
+    if token[0].isupper():
+        random.shuffle(person_vec)
+        raw_vec = word2vec_model[person_vec[0]]
+        return raw_vec
+    try:
+        int(token)
+        return word2vec_model["100"]
+    except ValueError:
+        pass
+
+    # Take next or previous token instead
+    try:
+        if token_nr < len(all_tokens)/2:
+            replace_index = token_nr + 1
+        else:
+            replace_index = token_nr - 1
+        if all_tokens[replace_index] in word2vec_model:
+            print("Replace ", token, " with ", all_tokens[replace_index])
+            raw_vec = word2vec_model[all_tokens[replace_index]]
+            return raw_vec
+    except IndexError:
+        pass
+    print("No vector found for ", token, " and no vector for neighbouring token")
+    raw_vec = [0] * semantic_vector_length
+    return raw_vec
+
 def clean(line):
-    return line.replace("'d", " would").replace("'s", " is").replace("'re", " are")\
+    return line.replace(".", " . ").replace("'d", " would").replace("'s", " is").replace("'re", " are")\
+    .replace('"', " ")\
     .replace("'ve", " have").replace("'ll", " will").replace("'m", " am")\
-    .replace("---", "-").replace("--", "-").replace("...", ".").replace("..", ".")
+    .replace("-", " ").replace("...", ".").replace("..", ".").replace(",", " ")\
+    .replace(" a ", " ").replace("A ", " ").replace(" of ", " ").replace("Of", "of")\
+    .replace("'", " ").replace("`", "").replace(":", "").replace(";", "").replace("*", "")\
+    .replace("`", " ").replace(" and ", " ").replace("And ", " ").replace(" to ", " ").replace("To ", " ")\
+
 
 if __name__ == '__main__':
-    
+    #get_first_edit_distance_match("aabbccddeeffgg", None)
+
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
     
@@ -260,4 +337,3 @@ if __name__ == '__main__':
     #get_vector_for_sentence("Why do you drink tea ?")
 
     make_dialogs(10, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"))
-

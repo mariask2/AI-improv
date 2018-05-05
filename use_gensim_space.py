@@ -18,17 +18,25 @@ semantic_vector_length = 300
 OUTPUT_DIR = "data_output"
 NBRS_MODEL_NAME = os.path.join(OUTPUT_DIR, "nbrs_model")
 
-
-def construct_vectors(lines, file_name_path):
+def get_saved_space_if_exists_and_file_names(file_name_path):
     file_name = os.path.basename(file_name_path)
     lines_f = NBRS_MODEL_NAME + "_current_lines_" + file_name
     vectors_f = NBRS_MODEL_NAME + "_current_vectors_" + file_name
     next_dict_f = NBRS_MODEL_NAME + "_next_dict_"  + file_name
-
+    
+    saved_model = None
     if os.path.isfile(NBRS_MODEL_NAME + file_name) and os.path.isfile(lines_f)\
     and os.path.isfile(vectors_f) and os.path.isfile(next_dict_f):
-        return get_saved_model(NBRS_MODEL_NAME + file_name, lines_f, vectors_f, next_dict_f)
+        saved_model = get_saved_model(NBRS_MODEL_NAME + file_name, lines_f, vectors_f, next_dict_f)
+    return saved_model, file_name, lines_f, vectors_f, next_dict_f
+
+def construct_vectors(lines, file_name_path):
+
+    saved_model, file_name, lines_f, vectors_f, next_dict_f =\
+        get_saved_space_if_exists_and_file_names(file_name_path)
     
+    if saved_model != None:
+        return saved_model
     print("Starts training a new nearest neighbour model\n******\n")
     current_lines = []
     current_lines_vector = []
@@ -67,10 +75,12 @@ def construct_vectors(lines, file_name_path):
     return get_saved_model(NBRS_MODEL_NAME + file_name, lines_f, vectors_f, next_dict_f)
 
 def get_saved_model(model_name, lines_f, vectors_f, next_dict_f):
+    print("Load saved model. This might take a while....")
     saved_nbrs = joblib.load(model_name)
     saved_current_lines = joblib.load(lines_f)
     saved_current_lines_vector = joblib.load(vectors_f)
     saved_next_dict = joblib.load(next_dict_f)
+    print("Loaded saved model.")
     
     #distances, indices = nbrs.kneighbors(X)
     return saved_nbrs, saved_current_lines, saved_current_lines_vector, saved_next_dict
@@ -123,6 +133,12 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text, prev
     return closest_neighbours, next_line
 
 def use_space(file_name):
+    saved_model, model_file_name, lines_f, vectors_f, next_dict_f =\
+        get_saved_space_if_exists_and_file_names(file_name)
+    
+    if saved_model != None:
+        return saved_model
+    
     f = open(file_name)
     lines = [el.strip() for el in f.readlines()]
     print("read ", len(lines), "line")
@@ -238,8 +254,9 @@ if __name__ == '__main__':
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
     
+    print("Loading word2vec space into the memory. This takes a while ...")
     word2vec_model = get_space()
-    
+    print("Loaded the word2vec space")
     #get_vector_for_sentence("Why do you drink tea ?")
 
     make_dialogs(10, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"))

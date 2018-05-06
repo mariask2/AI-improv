@@ -44,8 +44,11 @@ def construct_vectors(lines, file_name_path):
     current_lines_vector = []
     next_dict = {}
 
+    lines = [""] + lines # Start with an empty line
     for prev_line, line, next_line in zip(lines, lines[1:], lines[2:]):
-        if read_movie_lines.to_include([prev_line, line, next_line]):
+        if read_movie_lines.to_include([prev_line, line, next_line])\
+            or (read_movie_lines.to_include([line, next_line]) and prev_line.strip() == ""):
+            # Also include empty line, to get examples of the first line in the dialog
             sentences = sent_tokenize(line)
             last_sentence_in_line = sentences[-1]
             word_list = word_tokenize(last_sentence_in_line)
@@ -105,6 +108,7 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
         nr_of_neighbours = 2
     current_vec = get_vector_for_sentence(last_sentence_in_line)
     pre_vec = get_vector_for_sentence(prev_last_sentence)
+    # First, check line-pairs that are closest to a vector consisting of the current line and the previous one
     vec = pre_vec + current_vec
     #print("\n************\n Nearest to: " + text + "\n--")
     neighbours = nbrs.kneighbors(np.array([vec]), 10, return_distance=False)[0]
@@ -114,13 +118,16 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
     closest_neighbours = []
     next_lines = []
     for index, dist in zip(neighbours, neighbours_distance):
-        if dist < 0.80 and (len(current_lines[index]) < 5 or dist > 0.0): # Don't use the exact same line, don't copy previos dialog:
+        if dist < 0.87:
             closest_neighbours.append(current_lines[index])
+            print("Distance current and previous", dist)
             next_lines.extend(next_dict[current_lines[index]])
-    if len(closest_neighbours) == 0: #No neigbours close enough, ad the most close anyway
+    if len(closest_neighbours) == 0: #No neigbours close enough for the cut-off, ad the most close anyway
         closest_neighbours.append(current_lines[neighbours[0]])
         next_lines.extend(next_dict[current_lines[neighbours[0]]])
 
+    # Second, among the possible next-lines, check if there are any close neighbours
+    smallest_distance_so_far = 2
     closest_neighbours = list(set(closest_neighbours))
     next_lines = list(set(next_lines))[:10] # limit the options to not spend too much time to search
     next_line_ret = None
@@ -132,13 +139,16 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
         neighbours_next = nbrs.kneighbors(np.array([current_and_next]), 10, return_distance=False)[0]
         neighbours_distance_next = nbrs.kneighbors(np.array([current_and_next]), 10, return_distance=True)[0][0]
         for index, dist in zip(neighbours_next, neighbours_distance_next):
-            if dist < 0.87 and (len(word_tokenize(next_line)) < 5 or dist > 0.0): # Don't use the exact same line, don't copy previos dialog
+            if dist < 0.7: # If it's very close, save time, but not going throug the list
                 next_line_ret = next_line
+                smallest_distance_so_far = dist
+                break
+            else:
+                if dist < smallest_distance_so_far:
+                    smallest_distance_so_far = dist
+                    next_line_ret = next_line
 
-    if next_line_ret == None:
-        next_lines_ret = next_lines[0]
-    # When there are several options, take the one that in closest in style to the previous one
-    # except when there is not previous sentence, then only take the first in the list of possible options
+    print("Dist current and previous", dist)
     """
     if prev_last_sentence == "":
         selected_next = randint(0, len(next_lines)-1)
@@ -161,7 +171,7 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
                 #print("next_line", next_line)
                 #print("prev_last_sentence", prev_last_sentence)
        """
-    return closest_neighbours, next_line
+    return closest_neighbours, next_line_ret
 
 def use_space(file_name):
     saved_model, model_file_name, lines_f, vectors_f, next_dict_f =\
@@ -198,10 +208,9 @@ def read_beginnings():
     return first_lines, rest_lines
 
 def make_dialogs(nrs, file_name_1, file_name_2):
-    #nbrs_1, current_lines_1, current_lines_vector_1, next_dict_1 = use_space(file_name_1)
+    nbrs_1, current_lines_1, current_lines_vector_1, next_dict_1 = use_space(file_name_1)
     nbrs_2, current_lines_2, current_lines_vector_2, next_dict_2 = use_space(file_name_2)
-    #TODO. Temp solution
-    nbrs_1, current_lines_1, current_lines_vector_1, next_dict_1 = nbrs_2, current_lines_2, current_lines_vector_2, next_dict_2
+    
     first_lines, rest_lines = read_beginnings()
     
     nbrs = nbrs_1
@@ -259,7 +268,7 @@ def get_vector_for_sentence(sentence):
         tokens = tokens[:-1]
     # Take the first three and the last three words of the sentence to represent it. Regardless if they occur double
     if len(tokens) == 0:
-        tokens = ["wernwrelkjdsfio", "wernwrelkjdsfio", "wernwrelkjdsfio", "wernwrelkjdsfio"]
+        tokens = ["wernwrelkjdsfio", "wernwrelkjdsfio", "wernwrelkjdsfio", "wernwrelkjdsfio"] # words that don't exist, symbolises empty sentences
     if len(tokens) == 1:
         tokens =  list((tokens[0], tokens[0], tokens[0], tokens[0]))
     if len(tokens) == 2:
@@ -277,7 +286,7 @@ def get_vector_for_sentence(sentence):
             elif token_nr != 0 and token[0].isupper():
                 # Assume that the unknown token it is a name of a person
                 random.shuffle(person_vec)
-                #print("Try to replace ", token, " with ",  person_vec[0])
+                print("Try to replace ", token, " with ",  person_vec[0])
                 raw_vec = word2vec_model[person_vec[0]]
             elif token.isdigit():
                 raw_vec = word2vec_model["ten"]
@@ -340,7 +349,7 @@ def try_match_wider(token, all_tokens, token_nr, word2vec_model):
             return raw_vec
     except IndexError:
         pass
-    print("No vector found for ", token, " and no vector for neighbouring token")
+    #print("No vector found for ", token, " and no vector for neighbouring token")
     raw_vec = [0] * semantic_vector_length
     return raw_vec
 

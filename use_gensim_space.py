@@ -12,9 +12,36 @@ import gensim
 import read_movie_lines
 from scipy.spatial import distance
 import random
+from sklearn.feature_extraction import text
+
+# Stop word list
+######
+
+
+class StopwordHandler():
+    def __init__(self):
+        self.stop_word_file = "english_added.txt"
+        self.stop_word_set = None
+        self.user_stop_word_list = []
+    
+    def get_user_stop_word_list(self):
+        return self.user_stop_word_list
+    
+    def get_stop_word_set(self):
+        if self.stop_word_set == None:
+            f = open(self.stop_word_file)
+            additional_stop_words = [word.strip() for word in f.readlines()]
+            self.user_stop_word_list = additional_stop_words
+            f.close()
+            self.stop_word_set = text.ENGLISH_STOP_WORDS.union(additional_stop_words)
+        return self.stop_word_set
+
+stopword_handler = StopwordHandler()
+
+
 
 word2vec_model = None
-person_vec = ["Maria", "Smith", "James", "John", "Robert", "Michael", "William", "David", "Mary", "Patricia"\
+person_vec = ["Maria", "Smith", "James", "John", "Robert", "Michael", "William", "David", "Mary", "Patricia",\
                   "Linda", "Barbara", "Elizabeth", "Jennifer"]
 semantic_vector_length = 300
 OUTPUT_DIR = "data_output"
@@ -53,28 +80,29 @@ def construct_vectors(lines, file_name_path):
             last_sentence_in_line = sentences[-1]
             word_list = word_tokenize(last_sentence_in_line)
             current_lines.append(line)
-            norm_vector = get_vector_for_sentence(line)
-            prev_norm = get_vector_for_sentence(prev_line)
-            current_lines_vector.append(np.array(prev_norm + norm_vector))
+            word2vec_vector = get_final_vector_for_sentence(line, prev_line)
+            current_lines_vector.append(word2vec_vector)
             if line not in next_dict:
                     next_dict[line] = []
             next_dict[line].append(next_line)
 
-    print(len(current_lines))
-    print(len(current_lines_vector))
-    print(len(next_dict.keys()))
+    print("lines ", len(current_lines))
+    print("vectors ", len(current_lines_vector))
+    print("unique lines", len(next_dict.keys()))
 
         #for el in current_lines_vector:
 #print(el)
     X = np.array(current_lines_vector)
         #for el in X:
 #print(el)
-    nbrs = NearestNeighbors(n_neighbors=10, algorithm='ball_tree').fit(X)
-    
-    joblib.dump(nbrs, NBRS_MODEL_NAME + file_name, compress=9)
-    joblib.dump(current_lines, lines_f, compress=9)
-    joblib.dump(current_lines_vector, vectors_f, compress=9)
-    joblib.dump(next_dict, next_dict_f, compress=9)
+    print("Start traning nearest neigbhour")
+    nbrs = NearestNeighbors(n_neighbors=5, algorithm='ball_tree').fit(X)
+    print("Finish traning nearest neigbhour")
+
+    joblib.dump(nbrs, NBRS_MODEL_NAME + file_name, compress=5)
+    joblib.dump(current_lines, lines_f, compress=5)
+    joblib.dump(current_lines_vector, vectors_f, compress=5)
+    joblib.dump(next_dict, next_dict_f, compress=5)
     
     #joblib.dump(joblib.dump, , )
     return get_saved_model(NBRS_MODEL_NAME + file_name, lines_f, vectors_f, next_dict_f)
@@ -103,24 +131,19 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
     if len(prev_last_sentence_list) > 0:
         prev_last_sentence = prev_last_sentence_list[-1]
 
-    nr_of_neighbours = 2
-    if len(tokens) < 4 and prev_last_sentence != "":
-        nr_of_neighbours = 2
-    current_vec = get_vector_for_sentence(last_sentence_in_line)
-    pre_vec = get_vector_for_sentence(prev_last_sentence)
     # First, check line-pairs that are closest to a vector consisting of the current line and the previous one
-    vec = pre_vec + current_vec
+    vec = get_final_vector_for_sentence(last_sentence_in_line, prev_last_sentence)
     #print("\n************\n Nearest to: " + text + "\n--")
-    neighbours = nbrs.kneighbors(np.array([vec]), 10, return_distance=False)[0]
-    neighbours_distance = nbrs.kneighbors(np.array([vec]), 10, return_distance=True)[0][0]
+    neighbours = nbrs.kneighbors(np.array([vec]), 5, return_distance=False)[0]
+    neighbours_distance = nbrs.kneighbors(np.array([vec]), 5, return_distance=True)[0][0]
     #print("neighbours", neighbours)
     #print("neighbours_distance", neighbours_distance)
     closest_neighbours = []
     next_lines = []
     for index, dist in zip(neighbours, neighbours_distance):
-        if dist < 0.87:
+        if dist < 0.9: #0.87
             closest_neighbours.append(current_lines[index])
-            print("Distance current and previous", dist)
+            #print("Distance current and previous", dist)
             next_lines.extend(next_dict[current_lines[index]])
     if len(closest_neighbours) == 0: #No neigbours close enough for the cut-off, ad the most close anyway
         closest_neighbours.append(current_lines[neighbours[0]])
@@ -134,12 +157,12 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
     for next_line in next_lines:
         next_line_cleaned = clean(next_line)
         last_sentence_in_next_line = sent_tokenize(next_line_cleaned)[-1]
-        next_vec = get_vector_for_sentence(last_sentence_in_next_line)
-        current_and_next = current_vec + next_vec
-        neighbours_next = nbrs.kneighbors(np.array([current_and_next]), 10, return_distance=False)[0]
-        neighbours_distance_next = nbrs.kneighbors(np.array([current_and_next]), 10, return_distance=True)[0][0]
+        #Here the arguments are line (=last_sentence_in_next_line, last_sentence_in_line = prev_line)
+        current_and_next = get_final_vector_for_sentence(last_sentence_in_next_line, last_sentence_in_line)
+        neighbours_next = nbrs.kneighbors(np.array([current_and_next]), 5, return_distance=False)[0]
+        neighbours_distance_next = nbrs.kneighbors(np.array([current_and_next]), 5, return_distance=True)[0][0]
         for index, dist in zip(neighbours_next, neighbours_distance_next):
-            if dist < 0.7: # If it's very close, save time, but not going throug the list
+            if dist < 0.4: # If it's very close, save time, by not going throug the list
                 next_line_ret = next_line
                 smallest_distance_so_far = dist
                 break
@@ -148,7 +171,7 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
                     smallest_distance_so_far = dist
                     next_line_ret = next_line
 
-    print("Dist current and previous", dist)
+#print("Dist current and previous", dist)
     """
     if prev_last_sentence == "":
         selected_next = randint(0, len(next_lines)-1)
@@ -180,9 +203,10 @@ def use_space(file_name):
     if saved_model != None:
         return saved_model
     
+    # TODO: Not using the entire corpus
     f = open(file_name)
-    lines = [el.strip() for el in f.readlines()]
-    print("read ", len(lines), "line")
+    lines = [el.strip() for el in f.readlines()][:30000]
+    print("read ", len(lines), " lines")
     
     nbrs, current_lines, current_lines_vector, next_dict = construct_vectors(lines, file_name)
 
@@ -209,8 +233,9 @@ def read_beginnings():
 
 def make_dialogs(nrs, file_name_1, file_name_2):
     nbrs_1, current_lines_1, current_lines_vector_1, next_dict_1 = use_space(file_name_1)
+    print("Space 1 ready")
     nbrs_2, current_lines_2, current_lines_vector_2, next_dict_2 = use_space(file_name_2)
-    
+    print("Space 2 ready")
     first_lines, rest_lines = read_beginnings()
     
     nbrs = nbrs_1
@@ -273,38 +298,85 @@ def get_vector_for_sentence(sentence):
         tokens =  list((tokens[0], tokens[0], tokens[0], tokens[0]))
     if len(tokens) == 2:
         tokens =  list((tokens[0], tokens[0], tokens[1], tokens[1]))
-    if len(tokens) == 3:
-        tokens =  list((tokens[0], tokens[1], tokens[1], tokens[1], tokens[2]))
-    for token_nr, token in enumerate(tokens[:4] + tokens[-4:]):
-        token = token.strip()
-        raw_vec = None
-        try:
-            if token_nr != 0 and token in word2vec_model:
-                raw_vec = word2vec_model[token]
-            elif token.lower() in word2vec_model:
-                raw_vec = word2vec_model[token.lower()]
-            elif token_nr != 0 and token[0].isupper():
-                # Assume that the unknown token it is a name of a person
-                random.shuffle(person_vec)
-                print("Try to replace ", token, " with ",  person_vec[0])
-                raw_vec = word2vec_model[person_vec[0]]
-            elif token.isdigit():
-                raw_vec = word2vec_model["ten"]
-            else:
-                raw_vec = try_match_wider(token, tokens, token_nr, word2vec_model)
-    
-        except KeyError:
-            print("No vector found for", token)
-            raw_vec = [0] * semantic_vector_length
+        #if len(tokens) == 3:
+        #tokens =  list((tokens[0], tokens[1], tokens[1], tokens[1], tokens[2]))
+    for token_nr, token in enumerate(tokens[:3] + tokens[-3:]):
+        raw_vec = get_vector_for_token(token_nr, token, tokens)
         list_raw_vec = list(raw_vec)
         final_vector.extend(list_raw_vec)
-    length = len(final_vector)
-    norm_vector = list(preprocessing.normalize(np.reshape(final_vector, newshape = (1, length)), norm='l2')[0])
+    return final_vector
+
+def get_vector_for_token(token_nr, token, all_tokens_in_sentence):
+    token = token.strip()
+    raw_vec = None
+    try:
+        if token_nr != 0 and token in word2vec_model:
+            raw_vec = word2vec_model[token]
+        elif token.lower() in word2vec_model:
+            raw_vec = word2vec_model[token.lower()]
+        elif token_nr != 0 and token[0].isupper():
+            # Assume that the unknown token it is a name of a person
+            random.shuffle(person_vec)
+            raw_vec = word2vec_model[person_vec[0]]
+        elif token.isdigit():
+                raw_vec = word2vec_model["ten"]
+        else:
+                raw_vec = try_match_wider(token, all_tokens_in_sentence, token_nr, word2vec_model)
+                    
+    except KeyError:
+        print("No vector found for", token)
+        raw_vec = [0] * semantic_vector_length
+
+    return raw_vec
+
+
+def has_other_than_zero(vec):
+    for el in vec:
+        if el != 0:
+            return True
+    return False
+
+# Returns the summed vector for all the words in a sentene (or rather, the average).
+# Does a stop word filtering first
+def get_summed_vector_for_sentence(sentence):
+    sentence = clean(sentence)
+    sentence = sentence.replace(".", " ")
+    tokens = word_tokenize(sentence)
+    summed_vector = semantic_vector_length*[0]
+    nr_of_added = 0
+    for token_nr, token in enumerate(tokens):
+        if token not in stopword_handler.get_stop_word_set():
+            # "token.lower(), token.lower(), token.lower()" is just an ugly fix, to be able to use
+            # get_vector_for_token here as well, since this one looks an neighbours if the current
+            # one is not in the word2model
+            token_vec = get_vector_for_token(token_nr, token.lower(), [token.lower(), token.lower(), token.lower()])
+            if has_other_than_zero(token_vec):
+                summed_vector = np.sum([summed_vector, token_vec], axis=0)
+                nr_of_added = nr_of_added + 1
+    
+    if nr_of_added > 0:
+        average_vector_1 = [x / nr_of_added for x in summed_vector]
+        average_vector = list(np.true_divide(summed_vector, nr_of_added))
+    else:
+        average_vector = summed_vector
+
+    return average_vector
+
+def get_final_vector_for_sentence(line, prev_line):
+    current_sentence_vector = get_vector_for_sentence(line)
+    current_sentence_vector_average = get_summed_vector_for_sentence(line)
+    prev_sentence_vector = get_summed_vector_for_sentence(prev_line)
+    combined_vector = current_sentence_vector + current_sentence_vector_average + prev_sentence_vector
+    length = len(combined_vector)
+    norm_vector = list(preprocessing.normalize(np.reshape(combined_vector, newshape = (1, length)), norm='l2')[0])
+    #print("length", length)
+    """
     if len(norm_vector) != 2401:
         print("Wrong size of vector")
         print(sentence)
         print(norm_vector)
         exit(1)
+    """
     return norm_vector
 
 def try_match_wider(token, all_tokens, token_nr, word2vec_model):
@@ -344,7 +416,6 @@ def try_match_wider(token, all_tokens, token_nr, word2vec_model):
         else:
             replace_index = token_nr - 1
         if all_tokens[replace_index] in word2vec_model:
-            print("Replace ", token, " with ", all_tokens[replace_index])
             raw_vec = word2vec_model[all_tokens[replace_index]]
             return raw_vec
     except IndexError:
@@ -368,10 +439,13 @@ if __name__ == '__main__':
 
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
-    
+ 
+    print(stopword_handler.get_stop_word_set())
+
     print("Loading word2vec space into the memory. This takes a while ...")
     word2vec_model = get_space()
     print("Loaded the word2vec space")
     #get_vector_for_sentence("Why do you drink tea ?")
 
     make_dialogs(10, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"))
+

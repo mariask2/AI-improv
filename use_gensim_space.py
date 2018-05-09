@@ -171,29 +171,8 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
                     smallest_distance_so_far = dist
                     next_line_ret = next_line
 
-#print("Dist current and previous", dist)
-    """
-    if prev_last_sentence == "":
-        selected_next = randint(0, len(next_lines)-1)
-        next_line = next_lines[selected_next]
-        return closest_neighbours, next_line
-    smallest_distance_so_far = 2
-    next_line = next_lines[0][0]
-    last_sentence_vector = get_vector_for_sentence(prev_last_sentence)
-    for line in next_lines:
-        if len(next_lines) > 1 and line == prev_last_sentence:
-            continue # Using the exact same line gets boring
-        candidate_vec = get_vector_for_sentence(line)
-        dst = distance.euclidean(candidate_vec,last_sentence_vector)
-        if dst <= smallest_distance_so_far:
-            if dst == 2 or dst > 1.0:
-            # Don't make it too similar
-                smallest_distance_so_far = dst
-                next_line = line
-                #print(smallest_distance_so_far)
-                #print("next_line", next_line)
-                #print("prev_last_sentence", prev_last_sentence)
-       """
+    #print("Dist current and previous", dist)
+
     return closest_neighbours, next_line_ret
 
 def use_space(file_name):
@@ -205,7 +184,7 @@ def use_space(file_name):
     
     # TODO: Not using the entire corpus
     f = open(file_name)
-    lines = [el.strip() for el in f.readlines()][:30000]
+    lines = [el.strip() for el in f.readlines()][:1000]
     print("read ", len(lines), " lines")
     
     nbrs, current_lines, current_lines_vector, next_dict = construct_vectors(lines, file_name)
@@ -247,14 +226,19 @@ def make_dialogs(nrs, file_name_1, file_name_2):
         print("****************")
         selected_dialog = randint(0, len(first_lines)-1)
         first_line = first_lines[selected_dialog]
-        print("first_line: ", first_line)
+        #print("first_line: ", first_line)
         rest = rest_lines[first_line]
         print(rest)
+        previous_line_to_compare_with = rest[0]
+        line_to_compare_with = rest[1]
         name = "A-san: "
-        print(name, first_line)
-        previous_line_to_compare_with = ""
-        line_to_compare_with = first_line
-        for i in range(0, len(rest)):
+        print(name, previous_line_to_compare_with)
+        name = "B-san: "
+        print(name, line_to_compare_with)
+        #previous_line_to_compare_with = ""
+        #line_to_compare_with = first_line
+
+        for i in range(0, len(rest)-2):
             if name == "A-san: ":
                 name = "B-san: "
                 nbrs = nbrs_2
@@ -338,7 +322,7 @@ def has_other_than_zero(vec):
 
 # Returns the summed vector for all the words in a sentene (or rather, the average).
 # Does a stop word filtering first
-def get_summed_vector_for_sentence(sentence):
+def get_summed_vector_for_sentence(sentence, extra_division_factor):
     sentence = clean(sentence)
     sentence = sentence.replace(".", " ")
     tokens = word_tokenize(sentence)
@@ -353,19 +337,21 @@ def get_summed_vector_for_sentence(sentence):
             if has_other_than_zero(token_vec):
                 summed_vector = np.sum([summed_vector, token_vec], axis=0)
                 nr_of_added = nr_of_added + 1
-    
+
+    # Compute average, and at the same time, divide the weight by the "extra_division_factor", which can down-weight the importance
+    # of the summed vector
     if nr_of_added > 0:
-        average_vector_1 = [x / nr_of_added for x in summed_vector]
-        average_vector = list(np.true_divide(summed_vector, nr_of_added))
+        average_vector = list(np.true_divide(summed_vector, (nr_of_added + extra_division_factor)))
     else:
         average_vector = summed_vector
 
     return average_vector
 
 def get_final_vector_for_sentence(line, prev_line):
+    extra_division_factor = 1.2
     current_sentence_vector = get_vector_for_sentence(line)
-    current_sentence_vector_average = get_summed_vector_for_sentence(line)
-    prev_sentence_vector = get_summed_vector_for_sentence(prev_line)
+    current_sentence_vector_average = get_summed_vector_for_sentence(line, extra_division_factor)
+    prev_sentence_vector = get_summed_vector_for_sentence(prev_line, extra_division_factor)
     combined_vector = current_sentence_vector + current_sentence_vector_average + prev_sentence_vector
     length = len(combined_vector)
     norm_vector = list(preprocessing.normalize(np.reshape(combined_vector, newshape = (1, length)), norm='l2')[0])

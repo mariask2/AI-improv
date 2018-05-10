@@ -71,11 +71,10 @@ def construct_vectors(lines, file_name_path):
     current_lines_vector = []
     next_dict = {}
 
-    lines = [""] + lines # Start with an empty line
+    lines = lines
     for prev_line, line, next_line in zip(lines, lines[1:], lines[2:]):
-        if read_movie_lines.to_include([prev_line, line, next_line])\
-            or (read_movie_lines.to_include([line, next_line]) and prev_line.strip() == ""):
-            # Also include empty line, to get examples of the first line in the dialog
+        if read_movie_lines.to_include([prev_line, line, next_line]):
+            
             sentences = sent_tokenize(line)
             last_sentence_in_line = sentences[-1]
             word_list = word_tokenize(last_sentence_in_line)
@@ -99,10 +98,10 @@ def construct_vectors(lines, file_name_path):
     nbrs = NearestNeighbors(n_neighbors=5, algorithm='ball_tree').fit(X)
     print("Finish traning nearest neigbhour")
 
-    joblib.dump(nbrs, NBRS_MODEL_NAME + file_name, compress=5)
-    joblib.dump(current_lines, lines_f, compress=5)
-    joblib.dump(current_lines_vector, vectors_f, compress=5)
-    joblib.dump(next_dict, next_dict_f, compress=5)
+    joblib.dump(nbrs, NBRS_MODEL_NAME + file_name, compress=3)
+    joblib.dump(current_lines, lines_f, compress=3)
+    joblib.dump(current_lines_vector, vectors_f, compress=3)
+    joblib.dump(next_dict, next_dict_f, compress=3)
     
     #joblib.dump(joblib.dump, , )
     return get_saved_model(NBRS_MODEL_NAME + file_name, lines_f, vectors_f, next_dict_f)
@@ -184,7 +183,7 @@ def use_space(file_name):
     
     # TODO: Not using the entire corpus
     f = open(file_name)
-    lines = [el.strip() for el in f.readlines()][:1000]
+    lines = [el.strip() for el in f.readlines()][:10000]
     print("read ", len(lines), " lines")
     
     nbrs, current_lines, current_lines_vector, next_dict = construct_vectors(lines, file_name)
@@ -235,8 +234,7 @@ def make_dialogs(nrs, file_name_1, file_name_2):
         print(name, previous_line_to_compare_with)
         name = "B-san: "
         print(name, line_to_compare_with)
-        #previous_line_to_compare_with = ""
-        #line_to_compare_with = first_line
+
 
         for i in range(0, len(rest)-2):
             if name == "A-san: ":
@@ -348,10 +346,11 @@ def get_summed_vector_for_sentence(sentence, extra_division_factor):
     return average_vector
 
 def get_final_vector_for_sentence(line, prev_line):
-    extra_division_factor = 1.2
+    extra_division_factor_previous = 1.1
+    extra_division_factor_current = 1.3
     current_sentence_vector = get_vector_for_sentence(line)
-    current_sentence_vector_average = get_summed_vector_for_sentence(line, extra_division_factor)
-    prev_sentence_vector = get_summed_vector_for_sentence(prev_line, extra_division_factor)
+    current_sentence_vector_average = get_summed_vector_for_sentence(line, extra_division_factor_current)
+    prev_sentence_vector = get_summed_vector_for_sentence(prev_line, extra_division_factor_previous)
     combined_vector = current_sentence_vector + current_sentence_vector_average + prev_sentence_vector
     length = len(combined_vector)
     norm_vector = list(preprocessing.normalize(np.reshape(combined_vector, newshape = (1, length)), norm='l2')[0])

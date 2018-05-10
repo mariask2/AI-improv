@@ -50,18 +50,18 @@ NBRS_MODEL_NAME = os.path.join(OUTPUT_DIR, "nbrs_model")
 def get_saved_space_if_exists_and_file_names(file_name_path):
     file_name = os.path.basename(file_name_path)
     lines_f = NBRS_MODEL_NAME + "_current_lines_" + file_name
-    vectors_f = NBRS_MODEL_NAME + "_current_vectors_" + file_name
     next_dict_f = NBRS_MODEL_NAME + "_next_dict_"  + file_name
     
     saved_model = None
     if os.path.isfile(NBRS_MODEL_NAME + file_name) and os.path.isfile(lines_f)\
-    and os.path.isfile(vectors_f) and os.path.isfile(next_dict_f):
-        saved_model = get_saved_model(NBRS_MODEL_NAME + file_name, lines_f, vectors_f, next_dict_f)
-    return saved_model, file_name, lines_f, vectors_f, next_dict_f
+    and os.path.isfile(next_dict_f):
+        saved_model = get_saved_model(NBRS_MODEL_NAME + file_name, lines_f, next_dict_f)
+
+    return saved_model, file_name, lines_f, next_dict_f
 
 def construct_vectors(lines, file_name_path):
 
-    saved_model, file_name, lines_f, vectors_f, next_dict_f =\
+    saved_model, file_name, lines_f, next_dict_f =\
         get_saved_space_if_exists_and_file_names(file_name_path)
     
     if saved_model != None:
@@ -98,26 +98,24 @@ def construct_vectors(lines, file_name_path):
     nbrs = NearestNeighbors(n_neighbors=5, algorithm='ball_tree').fit(X)
     print("Finish traning nearest neigbhour")
 
-    joblib.dump(nbrs, NBRS_MODEL_NAME + file_name, compress=3)
-    joblib.dump(current_lines, lines_f, compress=3)
-    joblib.dump(current_lines_vector, vectors_f, compress=3)
-    joblib.dump(next_dict, next_dict_f, compress=3)
+    joblib.dump(nbrs, NBRS_MODEL_NAME + file_name, compress=4)
+    joblib.dump(current_lines, lines_f, compress=4)
+    joblib.dump(next_dict, next_dict_f, compress=4)
     
     #joblib.dump(joblib.dump, , )
-    return get_saved_model(NBRS_MODEL_NAME + file_name, lines_f, vectors_f, next_dict_f)
+    return get_saved_model(NBRS_MODEL_NAME + file_name, lines_f, next_dict_f)
 
-def get_saved_model(model_name, lines_f, vectors_f, next_dict_f):
+def get_saved_model(model_name, lines_f, next_dict_f):
     print("Load saved model. This might take a while....")
     saved_nbrs = joblib.load(model_name)
     saved_current_lines = joblib.load(lines_f)
-    saved_current_lines_vector = joblib.load(vectors_f)
     saved_next_dict = joblib.load(next_dict_f)
     print("Loaded saved model.")
     
     #distances, indices = nbrs.kneighbors(X)
-    return saved_nbrs, saved_current_lines, saved_current_lines_vector, saved_next_dict
+    return saved_nbrs, saved_current_lines, saved_next_dict
 
-def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncleaned, previous_line_uncleaned):
+def get_nearest(nbrs, current_lines, next_dict, text_uncleaned, previous_line_uncleaned):
     text = clean(text_uncleaned)
     text_uncleaned = None
     last_sentence_in_line = sent_tokenize(text)[-1]
@@ -175,7 +173,7 @@ def get_nearest(nbrs, current_lines, current_lines_vector, next_dict, text_uncle
     return closest_neighbours, next_line_ret
 
 def use_space(file_name):
-    saved_model, model_file_name, lines_f, vectors_f, next_dict_f =\
+    saved_model, model_file_name, lines_f, next_dict_f =\
         get_saved_space_if_exists_and_file_names(file_name)
     
     if saved_model != None:
@@ -183,13 +181,12 @@ def use_space(file_name):
     
     # TODO: Not using the entire corpus
     f = open(file_name)
-    lines = [el.strip() for el in f.readlines()][:10000]
+    lines = [el.strip() for el in f.readlines()]
     print("read ", len(lines), " lines")
     
-    nbrs, current_lines, current_lines_vector, next_dict = construct_vectors(lines, file_name)
+    nbrs, current_lines, next_dict = construct_vectors(lines, file_name)
 
-    
-    return nbrs, current_lines, current_lines_vector, next_dict
+    return nbrs, current_lines, next_dict
 
 
 def read_beginnings():
@@ -210,16 +207,16 @@ def read_beginnings():
     return first_lines, rest_lines
 
 def make_dialogs(nrs, file_name_1, file_name_2):
-    nbrs_1, current_lines_1, current_lines_vector_1, next_dict_1 = use_space(file_name_1)
+    nbrs_1, current_lines_1,  next_dict_1 = use_space(file_name_1)
     print("Space 1 ready")
-    nbrs_2, current_lines_2, current_lines_vector_2, next_dict_2 = use_space(file_name_2)
+    nbrs_2, current_lines_2,  next_dict_2 = use_space(file_name_2)
     print("Space 2 ready")
     first_lines, rest_lines = read_beginnings()
     
-    nbrs = nbrs_1
-    current_lines = current_lines_1
-    current_lines_vector = current_lines_vector_1
-    next_dict = next_dict_1
+    nbrs = nbrs_2
+    current_lines = current_lines_2
+    next_dict = next_dict_2
+
     
     for n in range(0, nrs):
         print("****************")
@@ -241,16 +238,14 @@ def make_dialogs(nrs, file_name_1, file_name_2):
                 name = "B-san: "
                 nbrs = nbrs_2
                 current_lines = current_lines_2
-                current_lines_vector = current_lines_vector_2
                 next_dict = next_dict_2
             else:
                 name = "A-san: "
                 nbrs = nbrs_1
                 current_lines = current_lines_1
-                current_lines_vector = current_lines_vector_1
                 next_dict = next_dict_1
 
-            closest_neighbour, next_line = get_nearest(nbrs, current_lines, current_lines_vector, next_dict,\
+            closest_neighbour, next_line = get_nearest(nbrs, current_lines, next_dict,\
                                                     line_to_compare_with, previous_line_to_compare_with)
             print(name, next_line, "(Closest: ", closest_neighbour, ")")
             previous_line_to_compare_with = line_to_compare_with

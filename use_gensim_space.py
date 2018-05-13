@@ -137,8 +137,12 @@ def get_nearest(nbrs, current_lines, next_dict, text_uncleaned, previous_line_un
     #print("neighbours_distance", neighbours_distance)
     closest_neighbours = []
     next_lines = []
+    first_dist = 2
     for index, dist in zip(neighbours, neighbours_distance):
-        if dist < 0.9: #0.87
+        if dist < first_dist:
+            first_dist = dist # Will only be set once in the loop
+        #print(dist - first_dist)
+        if dist - first_dist < 0.09: #0.87
             closest_neighbours.append(current_lines[index])
             #print("Distance current and previous", dist)
             next_lines.extend(next_dict[current_lines[index]])
@@ -341,7 +345,7 @@ def get_summed_vector_for_sentence(sentence, extra_division_factor):
     return average_vector
 
 def get_final_vector_for_sentence(line, prev_line):
-    extra_division_factor_previous = 1.1
+    extra_division_factor_previous = 1 # No extra division at the moment
     extra_division_factor_current = 1.3
     current_sentence_vector = get_vector_for_sentence(line)
     current_sentence_vector_average = get_summed_vector_for_sentence(line, extra_division_factor_current)
@@ -406,7 +410,7 @@ def try_match_wider(token, all_tokens, token_nr, word2vec_model):
 
 def clean(line):
     return line.replace(".", " . ").replace("'d", " would").replace("'s", " is").replace("'re", " are")\
-    .replace('"', " ")\
+    .replace('"', " ").replace("]", "").replace["[", ""]\
     .replace("'ve", " have").replace("'ll", " will").replace("'m", " am")\
     .replace("-", " ").replace("...", ".").replace("..", ".").replace(",", " ")\
     .replace(" a ", " ").replace("A ", " ").replace(" of ", " ").replace("Of", "of")\

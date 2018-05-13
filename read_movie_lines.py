@@ -27,9 +27,9 @@ def read_converstion():
         lines = ([el.strip() for el in sp[3].replace("['","").replace("']", "").split("', '")])
         
         conversation_list = [line_dict[el].strip() for el in lines]
-        # Include audience conversations of at least 5 lines to use a data
-        # to comapre with in a turing test
-        if to_include(conversation_list) and len(lines) >= 5:
+        # Include audience conversations of at least 6 lines to use a data
+        # to compare with in a turing test
+        if to_include(conversation_list) and len(lines) >= 6:
             result_dict["AUDIENCE"].append(conversation_list)
         else: # not audience
             mind = which_mind(sp[2])
@@ -63,7 +63,7 @@ def to_include(lines):
         last_sentence = sentences[-1]
         last_sentence = last_sentence.replace(".", " ")
         words = word_tokenize(last_sentence)
-        if len(words) > 11 or len(words) < 2:
+        if len(words) > 13 or len(words) < 2:
             return False
         if len(words) < 3:
             # Remove sentences with very little content

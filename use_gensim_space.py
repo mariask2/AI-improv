@@ -90,10 +90,10 @@ def construct_vectors(lines, file_name_path):
     print("unique lines", len(next_dict.keys()))
 
         #for el in current_lines_vector:
-#print(el)
+
     X = np.array(current_lines_vector)
         #for el in X:
-#print(el)
+
     print("Start traning nearest neigbhour")
     nbrs = NearestNeighbors(n_neighbors=5, algorithm='ball_tree').fit(X)
     print("Finish traning nearest neigbhour")
@@ -115,7 +115,21 @@ def get_saved_model(model_name, lines_f, next_dict_f):
     #distances, indices = nbrs.kneighbors(X)
     return saved_nbrs, saved_current_lines, saved_next_dict
 
-def get_nearest(nbrs, current_lines, next_dict, text_uncleaned, previous_line_uncleaned):
+def remove_bad_neighbours(closest_neighbours, already_used, is_last_line):
+    resulting_neighbour_list = []
+    for i in range(len(closest_neighbours)-1, -1, -1):
+        if len(resulting_neighbour_list) == 0 and i == 0:
+            # There are no alternative neighbours to use, so have to take this one regardle
+            resulting_neighbour_list.append(closest_neighbours[i])
+        elif closest_neighbours[i] in already_used:
+            pass # Don't use this neighbour, since it is alreday in the dialogue
+        elif is_last_line and closest_neighbours[i][-1] == "?":
+            pass # if possible, don't end with a line with question mark
+        else:
+            resulting_neighbour_list.append(closest_neighbours[i])
+    return resulting_neighbour_list
+
+def get_nearest(nbrs, current_lines, next_dict, text_uncleaned, previous_line_uncleaned, already_used, is_last_line):
     text = clean(text_uncleaned)
     text_uncleaned = None
     last_sentence_in_line = sent_tokenize(text)[-1]
@@ -141,8 +155,9 @@ def get_nearest(nbrs, current_lines, next_dict, text_uncleaned, previous_line_un
     for index, dist in zip(neighbours, neighbours_distance):
         if dist < first_dist:
             first_dist = dist # Will only be set once in the loop
-        #print(dist - first_dist)
-        if dist - first_dist < 0.09: #0.87
+        #print("difference", dist - first_dist)
+        #print("first_dist", first_dist)
+        if dist - first_dist < 0.09 or dist < 0.3:
             closest_neighbours.append(current_lines[index])
             #print("Distance current and previous", dist)
             next_lines.extend(next_dict[current_lines[index]])
@@ -153,6 +168,8 @@ def get_nearest(nbrs, current_lines, next_dict, text_uncleaned, previous_line_un
     # Second, among the possible next-lines, check if there are any close neighbours
     smallest_distance_so_far = 2
     closest_neighbours = list(set(closest_neighbours))
+    
+    next_lines = remove_bad_neighbours(next_lines, already_used, is_last_line)
     next_lines = list(set(next_lines))[:10] # limit the options to not spend too much time to search
     next_line_ret = None
     for next_line in next_lines:
@@ -162,6 +179,7 @@ def get_nearest(nbrs, current_lines, next_dict, text_uncleaned, previous_line_un
         current_and_next = get_final_vector_for_sentence(last_sentence_in_next_line, last_sentence_in_line)
         neighbours_next = nbrs.kneighbors(np.array([current_and_next]), 5, return_distance=False)[0]
         neighbours_distance_next = nbrs.kneighbors(np.array([current_and_next]), 5, return_distance=True)[0][0]
+        
         for index, dist in zip(neighbours_next, neighbours_distance_next):
             if dist < 0.4: # If it's very close, save time, by not going throug the list
                 next_line_ret = next_line
@@ -193,10 +211,10 @@ def use_space(file_name):
     return nbrs, current_lines, next_dict
 
 
-def read_beginnings():
+def read_beginnings(audience_file):
     first_lines = []
     rest_lines = {}
-    f = open(os.path.join(OUTPUT_DIR, "audience.txt"))
+    f = open(os.path.join(OUTPUT_DIR, audience_file))
     lines = f.readlines()
     f.close()
     rest_of_dialog = []
@@ -210,19 +228,20 @@ def read_beginnings():
             rest_of_dialog.append(line.strip())
     return first_lines, rest_lines
 
-def make_dialogs(nrs, file_name_1, file_name_2):
+def make_dialogs(nrs, file_name_1, file_name_2, audience_file, max_dialog_length):
     nbrs_1, current_lines_1,  next_dict_1 = use_space(file_name_1)
     print("Space 1 ready")
     nbrs_2, current_lines_2,  next_dict_2 = use_space(file_name_2)
     print("Space 2 ready")
-    first_lines, rest_lines = read_beginnings()
+    first_lines, rest_lines = read_beginnings(audience_file)
     
     nbrs = nbrs_2
     current_lines = current_lines_2
     next_dict = next_dict_2
 
-    
+
     for n in range(0, nrs):
+        already_used = []
         print("****************")
         selected_dialog = randint(0, len(first_lines)-1)
         first_line = first_lines[selected_dialog]
@@ -235,9 +254,14 @@ def make_dialogs(nrs, file_name_1, file_name_2):
         print(name, previous_line_to_compare_with)
         name = "B-san: "
         print(name, line_to_compare_with)
-
-
-        for i in range(0, len(rest)-2):
+        already_used.append(previous_line_to_compare_with)
+        already_used.append(line_to_compare_with)
+        
+        dialog_length = max(len(rest)-2, max_dialog_length)
+        is_last_line = False
+        for i in range(0, dialog_length):
+            if i == dialog_length - 1:
+                is_last_line = True
             if name == "A-san: ":
                 name = "B-san: "
                 nbrs = nbrs_2
@@ -248,10 +272,12 @@ def make_dialogs(nrs, file_name_1, file_name_2):
                 nbrs = nbrs_1
                 current_lines = current_lines_1
                 next_dict = next_dict_1
-
+            
             closest_neighbour, next_line = get_nearest(nbrs, current_lines, next_dict,\
-                                                    line_to_compare_with, previous_line_to_compare_with)
+                                                    line_to_compare_with, previous_line_to_compare_with,\
+                                                       already_used, is_last_line)
             print(name, next_line, "(Closest: ", closest_neighbour, ")")
+            already_used.append(next_line)
             previous_line_to_compare_with = line_to_compare_with
             line_to_compare_with = next_line
             #print("line_to_compare_with", line_to_compare_with)
@@ -289,6 +315,8 @@ def get_vector_for_sentence(sentence):
 
 def get_vector_for_token(token_nr, token, all_tokens_in_sentence):
     token = token.strip()
+    if len(token) > 1 and token[1].isupper(): # probably all is caps then
+        token = token.lower()
     raw_vec = None
     try:
         if token_nr != 0 and token in word2vec_model:
@@ -319,14 +347,14 @@ def has_other_than_zero(vec):
 
 # Returns the summed vector for all the words in a sentene (or rather, the average).
 # Does a stop word filtering first
-def get_summed_vector_for_sentence(sentence, extra_division_factor):
+def get_summed_vector_for_sentence(sentence, extra_division_factor, remove_stop_words):
     sentence = clean(sentence)
     sentence = sentence.replace(".", " ")
     tokens = word_tokenize(sentence)
     summed_vector = semantic_vector_length*[0]
     nr_of_added = 0
     for token_nr, token in enumerate(tokens):
-        if token not in stopword_handler.get_stop_word_set():
+        if token not in stopword_handler.get_stop_word_set() or not remove_stop_words:
             # "token.lower(), token.lower(), token.lower()" is just an ugly fix, to be able to use
             # get_vector_for_token here as well, since this one looks an neighbours if the current
             # one is not in the word2model
@@ -338,22 +366,23 @@ def get_summed_vector_for_sentence(sentence, extra_division_factor):
     # Compute average, and at the same time, divide the weight by the "extra_division_factor", which can down-weight the importance
     # of the summed vector
     if nr_of_added > 0:
-        average_vector = list(np.true_divide(summed_vector, (nr_of_added + extra_division_factor)))
+        average_vector = np.true_divide(summed_vector, nr_of_added)
     else:
         average_vector = summed_vector
 
-    return average_vector
+    average_vector_weighted = np.true_divide(average_vector, extra_division_factor)
+    return list(average_vector_weighted)
 
 def get_final_vector_for_sentence(line, prev_line):
-    extra_division_factor_previous = 1 # No extra division at the moment
+    extra_division_factor_previous = 1.1
     extra_division_factor_current = 1.3
     current_sentence_vector = get_vector_for_sentence(line)
-    current_sentence_vector_average = get_summed_vector_for_sentence(line, extra_division_factor_current)
-    prev_sentence_vector = get_summed_vector_for_sentence(prev_line, extra_division_factor_previous)
+    current_sentence_vector_average = get_summed_vector_for_sentence(line, extra_division_factor_current, remove_stop_words = False)
+    prev_sentence_vector = get_summed_vector_for_sentence(prev_line, extra_division_factor_previous, remove_stop_words = True)
     combined_vector = current_sentence_vector + current_sentence_vector_average + prev_sentence_vector
     length = len(combined_vector)
     norm_vector = list(preprocessing.normalize(np.reshape(combined_vector, newshape = (1, length)), norm='l2')[0])
-    #print("length", length)
+
     """
     if len(norm_vector) != 2401:
         print("Wrong size of vector")
@@ -410,7 +439,7 @@ def try_match_wider(token, all_tokens, token_nr, word2vec_model):
 
 def clean(line):
     return line.replace(".", " . ").replace("'d", " would").replace("'s", " is").replace("'re", " are")\
-    .replace('"', " ").replace("]", "").replace["[", ""]\
+    .replace('"', " ").replace("]", "").replace("[", "")\
     .replace("'ve", " have").replace("'ll", " will").replace("'m", " am")\
     .replace("-", " ").replace("...", ".").replace("..", ".").replace(",", " ")\
     .replace(" a ", " ").replace("A ", " ").replace(" of ", " ").replace("Of", "of")\
@@ -424,12 +453,16 @@ if __name__ == '__main__':
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
  
-    print(stopword_handler.get_stop_word_set())
+    #print(stopword_handler.get_stop_word_set())
 
     print("Loading word2vec space into the memory. This takes a while ...")
     word2vec_model = get_space()
     print("Loaded the word2vec space")
     #get_vector_for_sentence("Why do you drink tea ?")
 
-    make_dialogs(10, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"))
+    # final evalution
+    #make_dialogs(10, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "audience.txt", 4)
+
+    # development data
+    make_dialogs(10, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "evaluation_data.txt", 11)
 

@@ -5,7 +5,7 @@ import use_gensim_space
 OUTPUT_DIR = "data_output"
 
 mind_dict = {}
-result_dict = {"A-SAN" : [], "B-SAN": [], "AUDIENCE" : []}
+result_dict = {"A-SAN" : [], "B-SAN": [], "AUDIENCE" : [], "EVALUATION_DATA" : []}
 mappings = {0 : "A-SAN", 1 : "B-SAN"}
 # Each movie should be assigned to one of the three minds
 def which_mind(movie_id):
@@ -22,6 +22,7 @@ def read_converstion():
 
     conv = open("cornell_movie-dialogs_corpus/movie_conversations.txt", encoding="ascii",  errors="replace")
     more_than_ten = 0
+    evaluation_lines = 0
     for line in conv:
         sp = line.strip().split("+++$+++")
         lines = ([el.strip() for el in sp[3].replace("['","").replace("']", "").split("', '")])
@@ -31,6 +32,10 @@ def read_converstion():
         # to compare with in a turing test
         if to_include(conversation_list) and len(lines) >= 6:
             result_dict["AUDIENCE"].append(conversation_list)
+        elif to_include(conversation_list) and len(lines) >= 1 and evaluation_lines < 100:
+            # Use a maximum of 100 lines as evaluation data
+            result_dict["EVALUATION_DATA"].append(conversation_list)
+            evaluation_lines = evaluation_lines + 1
         else: # not audience
             mind = which_mind(sp[2])
             more_than_ten = more_than_ten + 1
@@ -58,7 +63,7 @@ def to_include(lines):
         sentences = sent_tokenize(line)
         if len(sentences) > 2:
             return False
-        if len(sentences) > 1 and len(word_tokenize(sentences[0])) > 4:
+        if len(sentences) > 1 and len(word_tokenize(sentences[0])) > 3:
             return False
         last_sentence = sentences[-1]
         last_sentence = last_sentence.replace(".", " ")

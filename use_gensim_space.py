@@ -144,22 +144,20 @@ def get_nearest(nbrs, current_lines, next_dict, text_uncleaned, previous_line_un
 
     # First, check line-pairs that are closest to a vector consisting of the current line and the previous one
     vec = get_final_vector_for_sentence(last_sentence_in_line, prev_last_sentence)
-    #print("\n************\n Nearest to: " + text + "\n--")
+
     neighbours = nbrs.kneighbors(np.array([vec]), 5, return_distance=False)[0]
     neighbours_distance = nbrs.kneighbors(np.array([vec]), 5, return_distance=True)[0][0]
-    #print("neighbours", neighbours)
-    #print("neighbours_distance", neighbours_distance)
+
     closest_neighbours = []
     next_lines = []
     first_dist = 2
     for index, dist in zip(neighbours, neighbours_distance):
         if dist < first_dist:
             first_dist = dist # Will only be set once in the loop
-        #print("difference", dist - first_dist)
-        #print("first_dist", first_dist)
+
         if dist - first_dist < 0.09 or dist < 0.3:
             closest_neighbours.append(current_lines[index])
-            #print("Distance current and previous", dist)
+
             next_lines.extend(next_dict[current_lines[index]])
     if len(closest_neighbours) == 0: #No neigbours close enough for the cut-off, ad the most close anyway
         closest_neighbours.append(current_lines[neighbours[0]])
@@ -190,7 +188,7 @@ def get_nearest(nbrs, current_lines, next_dict, text_uncleaned, previous_line_un
                     smallest_distance_so_far = dist
                     next_line_ret = next_line
 
-    #print("Dist current and previous", dist)
+
 
     return closest_neighbours, next_line_ret
 
@@ -211,30 +209,39 @@ def use_space(file_name):
     return nbrs, current_lines, next_dict
 
 
-def read_beginnings(audience_file):
+def read_beginnings(audience_file, other_output = None):
     first_lines = []
     rest_lines = {}
-    f = open(os.path.join(OUTPUT_DIR, audience_file))
+    if other_output:
+        file_name = os.path.join(other_output, audience_file)
+        print("Use examples from ", file_name)
+        f = open(file_name)
+
+    else:
+        f = open(os.path.join(OUTPUT_DIR, audience_file))
     lines = f.readlines()
+    lines = lines + [""]
     f.close()
     rest_of_dialog = []
-    for prev_line, line in zip(lines, lines[1:]):
-        if prev_line.strip() == "":
-            if len(rest_of_dialog) > 0 and len(first_lines) > 0:
-                rest_lines[first_lines[-1]] = rest_of_dialog
-                rest_of_dialog = []
-            first_lines.append(line.strip())
+    for i in range(0, len(lines)):
+        line = lines[i]
         if line.strip() != "":
             rest_of_dialog.append(line.strip())
+        if line.strip() == "":
+            if len(rest_of_dialog) > 0:
+                rest_lines[rest_of_dialog[0]] = rest_of_dialog
+                first_lines.append(rest_of_dialog[0])
+                rest_of_dialog = []
     return first_lines, rest_lines
 
-def make_dialogs(nrs, file_name_1, file_name_2, audience_file, max_dialog_length):
+def make_dialogs(nrs, file_name_1, file_name_2, audience_file, max_dialog_length, other_output=None):
     nbrs_1, current_lines_1,  next_dict_1 = use_space(file_name_1)
     print("Space 1 ready")
     nbrs_2, current_lines_2,  next_dict_2 = use_space(file_name_2)
     print("Space 2 ready")
-    first_lines, rest_lines = read_beginnings(audience_file)
+    first_lines, rest_lines = read_beginnings(audience_file, other_output)
     
+    random.shuffle(first_lines)
     nbrs = nbrs_2
     current_lines = current_lines_2
     next_dict = next_dict_2
@@ -243,8 +250,7 @@ def make_dialogs(nrs, file_name_1, file_name_2, audience_file, max_dialog_length
     for n in range(0, nrs):
         already_used = []
         print("****************")
-        selected_dialog = randint(0, len(first_lines)-1)
-        first_line = first_lines[selected_dialog]
+        first_line = first_lines[n]
         #print("first_line: ", first_line)
         rest = rest_lines[first_line]
         print(rest)
@@ -292,12 +298,19 @@ def get_vector_for_sentence(sentence):
     sentence = clean(sentence)
     sentence = sentence.replace(".", " ")
     #
-    final_vector = [0]
+    final_vector = [0, 0, 0, 0, 0]
     tokens = word_tokenize(sentence)
     if len(tokens) > 0 and tokens[-1] in "?!.,:;":
         if tokens[-1] == "?":
-            final_vector = [1] # a bit to show its ending with question mark
+            final_vector = [1, 1, 1, 1, 1] # to bits to show its ending with question mark
         tokens = tokens[:-1]
+    question_word_vector = [0, 0, 0, 0, 0, 0, 0]
+    for i, question_word in enumerate(["who", "where", "when", "why", "what", "which", "how"]):
+        for t in tokens:
+            if t.lower() == question_word:
+                question_word_vector[i] = 1
+    final_vector = final_vector + question_word_vector*5
+
     # Take the first three and the last three words of the sentence to represent it. Regardless if they occur double
     if len(tokens) == 0:
         tokens = ["wernwrelkjdsfio", "wernwrelkjdsfio", "wernwrelkjdsfio", "wernwrelkjdsfio"] # words that don't exist, symbolises empty sentences
@@ -464,5 +477,6 @@ if __name__ == '__main__':
     #make_dialogs(10, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "audience.txt", 4)
 
     # development data
-    make_dialogs(10, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "evaluation_data.txt", 11)
+    #make_dialogs(30, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "evaluation_data.txt", 11)
+    make_dialogs(8, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "interesting_examples.txt", 11, "pre_defined_output")
 

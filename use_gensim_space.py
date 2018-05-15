@@ -13,6 +13,7 @@ import read_movie_lines
 from scipy.spatial import distance
 import random
 from sklearn.feature_extraction import text
+from sklearn import svm
 
 # Stop word list
 ######
@@ -125,6 +126,8 @@ def remove_bad_neighbours(closest_neighbours, already_used, is_last_line):
             pass # Don't use this neighbour, since it is alreday in the dialogue
         elif is_last_line and closest_neighbours[i][-1] == "?":
             pass # if possible, don't end with a line with question mark
+        elif is_last_line and closest_neighbours[i][-1] == "-":
+            pass # if possible, don't end with a line with -
         else:
             resulting_neighbour_list.append(closest_neighbours[i])
     return resulting_neighbour_list
@@ -155,22 +158,51 @@ def get_nearest(nbrs, current_lines, next_dict, text_uncleaned, previous_line_un
         if dist < first_dist:
             first_dist = dist # Will only be set once in the loop
 
-        if dist - first_dist < 0.09 or dist < 0.3:
+        if dist - first_dist < 0.08 or dist < 0.3:
             closest_neighbours.append(current_lines[index])
 
             next_lines.extend(next_dict[current_lines[index]])
-    if len(closest_neighbours) == 0: #No neigbours close enough for the cut-off, ad the most close anyway
-        closest_neighbours.append(current_lines[neighbours[0]])
-        next_lines.extend(next_dict[current_lines[neighbours[0]]])
 
     # Second, among the possible next-lines, check if there are any close neighbours
     smallest_distance_so_far = 2
     closest_neighbours = list(set(closest_neighbours))
     
-    next_lines = remove_bad_neighbours(next_lines, already_used, is_last_line)
-    next_lines = list(set(next_lines))[:10] # limit the options to not spend too much time to search
+    next_lines = remove_bad_neighbours(list(set(next_lines)), already_used, is_last_line)
+    #next_lines = list(set(next_lines))[:10] # limit the options to not spend too much time to search
     next_line_ret = None
+    
+    next_line_matrix_vectors = []
     for next_line in next_lines:
+        next_line_cleaned = clean(next_line)
+        last_sentence_in_next_line = sent_tokenize(next_line_cleaned)[-1]
+        current_and_next = get_final_vector_for_sentence(last_sentence_in_next_line, last_sentence_in_line)
+        next_line_matrix_vectors.append(current_and_next)
+
+    next_lines_matrix = np.array(next_line_matrix_vectors)
+    clf = svm.OneClassSVM()
+    clf.fit(next_lines_matrix)
+    predicted = clf.predict(next_lines_matrix)
+    outlier_class = 1
+    nr_of_ones = 0
+    nr_of_minus_ones = 0
+    for el in predicted:
+        if el == -1:
+            nr_of_minus_ones = nr_of_minus_ones + 1
+        else:
+            nr_of_ones = nr_of_ones + 1
+    if nr_of_minus_ones < nr_of_ones:
+        outlier_class = -1
+    next_lines_filtered_for_outliers = []
+    if nr_of_ones > 0 and nr_of_minus_ones > 0: # If there's an outlier category
+        for next_line, res in zip(next_lines, predicted):
+            if res == outlier_class:
+                pass # Don't add outliers to the candidate list
+            else:
+                next_lines_filtered_for_outliers.append(next_line)
+    else:
+        next_lines_filtered_for_outliers = next_lines
+
+    for next_line in next_lines_filtered_for_outliers:
         next_line_cleaned = clean(next_line)
         last_sentence_in_next_line = sent_tokenize(next_line_cleaned)[-1]
         #Here the arguments are line (=last_sentence_in_next_line, last_sentence_in_line = prev_line)
@@ -254,6 +286,7 @@ def make_dialogs(nrs, file_name_1, file_name_2, audience_file, max_dialog_length
         #print("first_line: ", first_line)
         rest = rest_lines[first_line]
         print(rest)
+        generated_dialog_lines = []
         previous_line_to_compare_with = rest[0]
         line_to_compare_with = rest[1]
         name = "A-san: "
@@ -263,6 +296,8 @@ def make_dialogs(nrs, file_name_1, file_name_2, audience_file, max_dialog_length
         already_used.append(previous_line_to_compare_with)
         already_used.append(line_to_compare_with)
         
+        generated_dialog_lines.append(previous_line_to_compare_with)
+        generated_dialog_lines.append(line_to_compare_with)
         dialog_length = max(len(rest)-2, max_dialog_length)
         is_last_line = False
         for i in range(0, dialog_length):
@@ -283,11 +318,20 @@ def make_dialogs(nrs, file_name_1, file_name_2, audience_file, max_dialog_length
                                                     line_to_compare_with, previous_line_to_compare_with,\
                                                        already_used, is_last_line)
             print(name, next_line, "(Closest: ", closest_neighbour, ")")
+            generated_dialog_lines.append(next_line)
             already_used.append(next_line)
             previous_line_to_compare_with = line_to_compare_with
             line_to_compare_with = next_line
             #print("line_to_compare_with", line_to_compare_with)
-
+        name = "A"
+        for generated, human in zip(generated_dialog_lines, rest):
+            print(name + ": " + generated + " & " + name + ": " + human + "\\\\")
+            if name == "A":
+                name = "B"
+            else:
+                name = "A"
+        print("\\\\")
+        print()
 
 def get_space():
     word2vec_model = gensim.models.KeyedVectors.load_word2vec_format("/Users/maria/mariaskeppstedtdsv/post-doc/gavagai/googlespace/GoogleNews-vectors-negative300.bin", binary=True)
@@ -474,9 +518,9 @@ if __name__ == '__main__':
     #get_vector_for_sentence("Why do you drink tea ?")
 
     # final evalution
-    #make_dialogs(10, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "audience.txt", 4)
+    make_dialogs(262, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "audience.txt", 4)
 
     # development data
     #make_dialogs(30, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "evaluation_data.txt", 11)
-    make_dialogs(8, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "interesting_examples.txt", 11, "pre_defined_output")
+    #make_dialogs(8, os.path.join(OUTPUT_DIR, "a-san.txt"), os.path.join(OUTPUT_DIR, "b-san.txt"), "interesting_examples.txt", 11, "pre_defined_output")
 
